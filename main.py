@@ -2307,3 +2307,183 @@ def sitemap_seo_xml():
     xml += "</urlset>"
 
     return AutoVersoResponse(content=xml, media_type="application/xml")
+
+
+def brand_slug(text):
+    return make_slug(text)
+
+
+def brand_list():
+    brands = {}
+
+    for car_row in all_cars():
+        brand = car_row["brand"] or "Sconosciuta"
+        brands[brand] = brands.get(brand, 0) + 1
+
+    return sorted(brands.items(), key=lambda x: x[0].lower())
+
+
+@app.get("/marche", response_class=HTMLResponse)
+def brands_page():
+    brands = brand_list()
+
+    body = f"""
+<main class="container">
+    <h2>Marche auto</h2>
+    <p class="muted">Esplora le auto presenti nel database AutoVerso AI divise per marca. Marche disponibili: {len(brands)}.</p>
+
+    <div class="grid">
+"""
+
+    for brand, count in brands:
+        slug = brand_slug(brand)
+
+        body += f"""
+        <div class="card">
+            <h3>{escape(brand)}</h3>
+            <div class="number">{count}</div>
+            <p class="muted">Auto presenti nel database</p>
+            <a class="button" href="/marca/{slug}">Apri marca</a>
+        </div>
+        """
+
+    body += """
+    </div>
+</main>
+"""
+    return page("Marche auto", body)
+
+
+@app.get("/marca/{slug}", response_class=HTMLResponse)
+def brand_detail(slug: str):
+    rows = []
+
+    brand_name = None
+
+    for car_row in all_cars():
+        if brand_slug(car_row["brand"] or "") == slug:
+            rows.append(car_row)
+            brand_name = car_row["brand"]
+
+    if not rows:
+        return page("Marca non trovata", '<main class="container"><h2>Marca non trovata</h2><a class="button" href="/marche">Torna alle marche</a></main>')
+
+    avg_power = round(sum([row["power"] for row in rows]) / len(rows), 1)
+    avg_consumption = round(sum([row["consumption"] for row in rows]) / len(rows), 1)
+    avg_price = round(sum([(row["price_min"] + row["price_max"]) / 2 for row in rows]) / len(rows), 0)
+
+    most_powerful = sorted(rows, key=lambda x: x["power"], reverse=True)[0]
+    cheapest = sorted(rows, key=lambda x: x["price_min"])[0]
+    most_reliable = sorted(rows, key=lambda x: x["reliability"], reverse=True)[0]
+
+    body = f"""
+<main class="container">
+
+    <div class="card">
+        <h1>{escape(brand_name)}</h1>
+        <p class="muted">Pagina marca AutoVerso AI con schede, report, guide e confronti.</p>
+
+        <a class="button" href="/marche">Tutte le marche</a>
+        <a class="button" href="/filtri?q={escape(brand_name)}">Filtra {escape(brand_name)}</a>
+        <a class="button" href="/classifiche">Classifiche</a>
+    </div>
+
+    <div class="grid">
+        <div class="card"><h3>Auto presenti</h3><div class="number">{len(rows)}</div></div>
+        <div class="card"><h3>Potenza media</h3><div class="number">{avg_power} CV</div></div>
+        <div class="card"><h3>Consumo medio</h3><div class="number">{avg_consumption} l/100 km</div></div>
+        <div class="card"><h3>Prezzo medio</h3><div class="number">{int(avg_price)} EUR</div></div>
+    </div>
+
+    <h2>Auto evidenziate {escape(brand_name)}</h2>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Piu potente</h3>
+            <p>{escape(most_powerful["name"])}</p>
+            <p class="muted">{most_powerful["power"]} CV</p>
+            <a class="button" href="/scheda/{most_powerful["id"]}">Apri scheda</a>
+        </div>
+
+        <div class="card">
+            <h3>Piu economica</h3>
+            <p>{escape(cheapest["name"])}</p>
+            <p class="muted">Da {cheapest["price_min"]} EUR</p>
+            <a class="button" href="/scheda/{cheapest["id"]}">Apri scheda</a>
+        </div>
+
+        <div class="card">
+            <h3>Piu affidabile</h3>
+            <p>{escape(most_reliable["name"])}</p>
+            <p class="muted">{most_reliable["reliability"]}/10</p>
+            <a class="button" href="/scheda/{most_reliable["id"]}">Apri scheda</a>
+        </div>
+    </div>
+
+    <h2>Tutte le auto {escape(brand_name)}</h2>
+"""
+
+    for car_row in rows:
+        body += pro_card(car_row)
+
+    body += """
+</main>
+"""
+    return page(f"Marca {brand_name}", body)
+
+
+@app.get("/classifica-marche", response_class=HTMLResponse)
+def brand_ranking():
+    brands = brand_list()
+
+    rows_html = ""
+
+    for brand, count in sorted(brands, key=lambda x: x[1], reverse=True):
+        rows_html += f"""
+        <tr>
+            <td>{escape(brand)}</td>
+            <td>{count}</td>
+            <td><a class="button" href="/marca/{brand_slug(brand)}">Apri</a></td>
+        </tr>
+        """
+
+    body = f"""
+<main class="container">
+    <h2>Classifica marche</h2>
+    <p class="muted">Marche ordinate per numero di auto presenti nel database.</p>
+
+    <div class="card">
+        <table>
+            <tr>
+                <th>Marca</th>
+                <th>Auto presenti</th>
+                <th>Pagina</th>
+            </tr>
+            {rows_html}
+        </table>
+    </div>
+</main>
+"""
+    return page("Classifica marche", body)
+
+
+@app.get("/sitemap-marche.xml")
+def sitemap_brands_xml():
+    base_url = "https://autoverso-ai.onrender.com"
+
+    urls = ["/marche", "/classifica-marche"]
+
+    for brand, count in brand_list():
+        urls.append(f"/marca/{brand_slug(brand)}")
+
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+
+    for url in urls:
+        xml += "  <url>\n"
+        xml += f"    <loc>{base_url}{url}</loc>\n"
+        xml += "  </url>\n"
+
+    xml += "</urlset>"
+
+    return AutoVersoResponse(content=xml, media_type="application/xml")
