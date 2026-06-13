@@ -2643,3 +2643,103 @@ def sitemap_models_xml():
     xml += "</urlset>"
 
     return AutoVersoResponse(content=xml, media_type="application/xml")
+
+@app.get("/verify", response_class=HTMLResponse)
+def verify_page():
+    rows = all_cars()
+
+    html = """
+<main class="container">
+    <h1>Verifica Database</h1>
+
+    <div class="card">
+        <p>Controllo qualità schede auto. Le auto generate automaticamente devono essere verificate prima di considerarle affidabili.</p>
+    </div>
+"""
+
+    for car in rows:
+        quality = car["data_quality"] if "data_quality" in car.keys() else "generated"
+
+        color = "#e74c3c"
+
+        if quality == "verified":
+            color = "#f39c12"
+
+        if quality == "premium_verified":
+            color = "#27ae60"
+
+        html += f"""
+<div class="card">
+    <h3>{escape(car["name"])}</h3>
+
+    <p>
+        Stato:
+        <span style="background:{color}; color:white; padding:4px 8px; border-radius:8px;">
+            {escape(quality)}
+        </span>
+    </p>
+
+    <p>
+        {car["power"]} CV |
+        {car["torque"]} Nm |
+        0-100 {car["zero100"]} s |
+        {car["price_min"]} - {car["price_max"]} EUR
+    </p>
+
+    <a class="button" href="/scheda/{car["id"]}">Scheda</a>
+    <a class="button" href="/modifica/{car["id"]}">Modifica</a>
+    <a class="button" href="/report/{car["id"]}">Report</a>
+</div>
+"""
+
+    html += "</main>"
+
+    return page("Verifica Database", html)
+
+@app.get("/set-quality/{car_id}/{quality}")
+def set_quality(car_id: int, quality: str):
+    allowed = ["generated", "verified", "premium_verified"]
+
+    if quality not in allowed:
+        return RedirectResponse(url="/verify", status_code=302)
+
+    connection = db()
+    connection.execute(
+        "UPDATE cars SET data_quality = ? WHERE id = ?",
+        (quality, car_id)
+    )
+    connection.commit()
+    connection.close()
+
+    return RedirectResponse(url="/verify", status_code=302)
+
+
+@app.get("/verify-bmw", response_class=HTMLResponse)
+def verify_bmw():
+    rows = [car for car in all_cars() if (car["brand"] or "").lower() == "bmw"]
+
+    html = """
+<main class="container">
+    <h1>Verifica BMW</h1>
+    <a class="button" href="/verify">Tutte le auto</a>
+"""
+
+    for car in rows:
+        quality = car["data_quality"] if "data_quality" in car.keys() else "generated"
+
+        html += f"""
+<div class="card">
+    <h3>{escape(car["name"])}</h3>
+    <p>{car["power"]} CV | {car["torque"]} Nm | 0-100 {car["zero100"]} s</p>
+    <p>Qualità dato: <strong>{escape(quality)}</strong></p>
+
+    <a class="button" href="/scheda/{car["id"]}">Scheda</a>
+    <a class="button" href="/modifica/{car["id"]}">Modifica</a>
+    <a class="button" href="/set-quality/{car["id"]}/generated">Generated</a>
+    <a class="button" href="/set-quality/{car["id"]}/verified">Verified</a>
+    <a class="button" href="/set-quality/{car["id"]}/premium_verified">Premium</a>
+</div>
+"""
+
+    html += "</main>"
+    return page("Verifica BMW", html)
