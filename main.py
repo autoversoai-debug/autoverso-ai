@@ -2219,3 +2219,91 @@ def sitemap_xml_autoverso():
     xml += "</urlset>"
 
     return AutoVersoResponse(content=xml, media_type="application/xml")
+
+import re
+
+
+def make_slug(text):
+    text = text.lower()
+    text = text.replace("+", " plus ")
+    text = text.replace("&", " e ")
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    text = text.strip("-")
+    return text
+
+
+def find_car_by_slug(slug):
+    for car_row in all_cars():
+        if make_slug(car_row["name"]) == slug:
+            return car_row
+    return None
+
+
+@app.get("/s/{slug}", response_class=HTMLResponse)
+def seo_slug_page(slug: str):
+    car_row = find_car_by_slug(slug)
+
+    if car_row is None:
+        return page("Scheda non trovata", '<main class="container"><h2>Auto non trovata</h2><a class="button" href="/schede">Torna alle schede</a></main>')
+
+    return seo_car_guide(car_row["id"])
+
+
+@app.get("/url-seo", response_class=HTMLResponse)
+def seo_url_list():
+    body = """
+<main class="container">
+    <h2>URL SEO AutoVerso AI</h2>
+    <p class="muted">Lista delle pagine ottimizzate per Google.</p>
+"""
+
+    for car_row in all_cars():
+        slug = make_slug(car_row["name"])
+        body += f"""
+        <div class="card">
+            <h3>{escape(car_row["name"])}</h3>
+            <p class="muted">/s/{slug}</p>
+            <a class="button" href="/s/{slug}">Apri URL SEO</a>
+            <a class="button" href="/scheda/{car_row["id"]}">Scheda PRO</a>
+        </div>
+        """
+
+    body += "</main>"
+    return page("URL SEO", body)
+
+
+@app.get("/sitemap-seo.xml")
+def sitemap_seo_xml():
+    base_url = "https://autoverso-ai.onrender.com"
+
+    urls = [
+        "/",
+        "/schede",
+        "/guide",
+        "/filtri",
+        "/classifiche",
+        "/report",
+        "/tuning",
+        "/privacy",
+        "/termini",
+        "/disclaimer"
+    ]
+
+    for car_row in all_cars():
+        slug = make_slug(car_row["name"])
+        urls.append(f"/s/{slug}")
+        urls.append(f"/scheda/{car_row['id']}")
+        urls.append(f"/report/{car_row['id']}")
+        urls.append(f"/guida/{car_row['id']}")
+
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+
+    for url in urls:
+        xml += "  <url>\n"
+        xml += f"    <loc>{base_url}{url}</loc>\n"
+        xml += "  </url>\n"
+
+    xml += "</urlset>"
+
+    return AutoVersoResponse(content=xml, media_type="application/xml")
