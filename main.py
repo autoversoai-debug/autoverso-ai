@@ -2487,3 +2487,159 @@ def sitemap_brands_xml():
     xml += "</urlset>"
 
     return AutoVersoResponse(content=xml, media_type="application/xml")
+
+
+def model_key(car_row):
+    brand = car_row["brand"] or "Sconosciuta"
+    model = car_row["model"] or "Modello"
+    return brand, model
+
+
+def model_slug(brand, model):
+    return make_slug(f"{brand} {model}")
+
+
+def model_list():
+    models = {}
+
+    for car_row in all_cars():
+        brand, model = model_key(car_row)
+        key = (brand, model)
+        models[key] = models.get(key, 0) + 1
+
+    return sorted(models.items(), key=lambda x: (x[0][0].lower(), x[0][1].lower()))
+
+
+@app.get("/modelli", response_class=HTMLResponse)
+def models_page():
+    models = model_list()
+
+    body = f"""
+<main class="container">
+    <h2>Modelli auto</h2>
+    <p class="muted">Esplora il database AutoVerso AI diviso per marca e modello. Modelli disponibili: {len(models)}.</p>
+
+    <div class="grid">
+"""
+
+    for (brand, model), count in models:
+        slug = model_slug(brand, model)
+
+        body += f"""
+        <div class="card">
+            <h3>{escape(brand)} {escape(model)}</h3>
+            <div class="number">{count}</div>
+            <p class="muted">Versioni presenti nel database</p>
+            <a class="button" href="/modello/{slug}">Apri modello</a>
+            <a class="button" href="/marca/{brand_slug(brand)}">Marca</a>
+        </div>
+        """
+
+    body += """
+    </div>
+</main>
+"""
+    return page("Modelli auto", body)
+
+
+@app.get("/modello/{slug}", response_class=HTMLResponse)
+def model_detail(slug: str):
+    rows = []
+    model_brand = None
+    model_name = None
+
+    for car_row in all_cars():
+        brand, model = model_key(car_row)
+
+        if model_slug(brand, model) == slug:
+            rows.append(car_row)
+            model_brand = brand
+            model_name = model
+
+    if not rows:
+        return page("Modello non trovato", '<main class="container"><h2>Modello non trovato</h2><a class="button" href="/modelli">Torna ai modelli</a></main>')
+
+    avg_power = round(sum([row["power"] for row in rows]) / len(rows), 1)
+    avg_consumption = round(sum([row["consumption"] for row in rows]) / len(rows), 1)
+    avg_price = round(sum([(row["price_min"] + row["price_max"]) / 2 for row in rows]) / len(rows), 0)
+
+    most_powerful = sorted(rows, key=lambda x: x["power"], reverse=True)[0]
+    cheapest = sorted(rows, key=lambda x: x["price_min"])[0]
+    best_consumption = sorted(rows, key=lambda x: x["consumption"])[0]
+
+    body = f"""
+<main class="container">
+
+    <div class="card">
+        <h1>{escape(model_brand)} {escape(model_name)}</h1>
+        <p class="muted">Pagina modello con versioni, schede, report e confronti.</p>
+
+        <a class="button" href="/modelli">Tutti i modelli</a>
+        <a class="button" href="/marca/{brand_slug(model_brand)}">Vai alla marca</a>
+        <a class="button" href="/filtri?q={escape(model_brand)} {escape(model_name)}">Filtra modello</a>
+    </div>
+
+    <div class="grid">
+        <div class="card"><h3>Versioni presenti</h3><div class="number">{len(rows)}</div></div>
+        <div class="card"><h3>Potenza media</h3><div class="number">{avg_power} CV</div></div>
+        <div class="card"><h3>Consumo medio</h3><div class="number">{avg_consumption} l/100 km</div></div>
+        <div class="card"><h3>Prezzo medio</h3><div class="number">{int(avg_price)} EUR</div></div>
+    </div>
+
+    <h2>Versioni evidenziate</h2>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Piu potente</h3>
+            <p>{escape(most_powerful["name"])}</p>
+            <p class="muted">{most_powerful["power"]} CV</p>
+            <a class="button" href="/scheda/{most_powerful["id"]}">Apri scheda</a>
+        </div>
+
+        <div class="card">
+            <h3>Piu economica</h3>
+            <p>{escape(cheapest["name"])}</p>
+            <p class="muted">Da {cheapest["price_min"]} EUR</p>
+            <a class="button" href="/scheda/{cheapest["id"]}">Apri scheda</a>
+        </div>
+
+        <div class="card">
+            <h3>Consuma meno</h3>
+            <p>{escape(best_consumption["name"])}</p>
+            <p class="muted">{best_consumption["consumption"]} l/100 km</p>
+            <a class="button" href="/scheda/{best_consumption["id"]}">Apri scheda</a>
+        </div>
+    </div>
+
+    <h2>Tutte le versioni {escape(model_brand)} {escape(model_name)}</h2>
+"""
+
+    for car_row in rows:
+        body += pro_card(car_row)
+
+    body += """
+</main>
+"""
+    return page(f"Modello {model_brand} {model_name}", body)
+
+
+@app.get("/sitemap-modelli.xml")
+def sitemap_models_xml():
+    base_url = "https://autoverso-ai.onrender.com"
+
+    urls = ["/modelli"]
+
+    for (brand, model), count in model_list():
+        urls.append(f"/modello/{model_slug(brand, model)}")
+
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+
+    for url in urls:
+        xml += "  <url>\n"
+        xml += f"    <loc>{base_url}{url}</loc>\n"
+        xml += "  </url>\n"
+
+    xml += "</urlset>"
+
+    return AutoVersoResponse(content=xml, media_type="application/xml")
