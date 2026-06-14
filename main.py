@@ -2743,3 +2743,105 @@ def verify_bmw():
 
     html += "</main>"
     return page("Verifica BMW", html)
+
+
+def public_cars():
+    return [car for car in all_cars() if car["data_quality"] in ["verified", "premium_verified"]]
+
+
+@app.get("/auto-verificate", response_class=HTMLResponse)
+def verified_cars_page():
+    rows = public_cars()
+
+    body = f"""
+<main class="container">
+    <h1>Auto verificate</h1>
+    <p class="muted">Qui compaiono solo vetture con versione/generazione reale e dati controllati. Auto verificate: {len(rows)}</p>
+"""
+
+    for car_row in rows:
+        body += pro_card(car_row)
+
+    body += "</main>"
+    return page("Auto verificate", body)
+
+
+@app.get("/pulizia-database", response_class=HTMLResponse)
+def cleanup_page():
+    rows = all_cars()
+
+    verified = [car for car in rows if car["data_quality"] in ["verified", "premium_verified"]]
+    legacy = [car for car in rows if car["data_quality"] == "legacy_generated"]
+    generated = [car for car in rows if car["data_quality"] == "generated"]
+
+    body = f"""
+<main class="container">
+    <h1>Pulizia database</h1>
+
+    <div class="grid">
+        <div class="card"><h3>Verificate</h3><div class="number">{len(verified)}</div></div>
+        <div class="card"><h3>Legacy generate</h3><div class="number">{len(legacy)}</div></div>
+        <div class="card"><h3>Generate</h3><div class="number">{len(generated)}</div></div>
+    </div>
+
+    <div class="warning">
+        Le auto generate o legacy_generated non devono essere usate come schede tecniche pubbliche.
+    </div>
+
+    <div class="card">
+        <h3>Azioni</h3>
+        <a class="button" href="/auto-verificate">Vedi solo auto verificate</a>
+        <a class="button" href="/nascondi-generate">Nascondi generate dalla navigazione</a>
+        <a class="button" href="/elimina-generate-confirm">Elimina generate</a>
+    </div>
+</main>
+"""
+    return page("Pulizia database", body)
+
+
+@app.get("/nascondi-generate")
+def hide_generated():
+    connection = db()
+    connection.execute("""
+        UPDATE cars
+        SET data_quality='legacy_generated'
+        WHERE data_quality='generated'
+    """)
+    connection.commit()
+    connection.close()
+
+    return RedirectResponse(url="/pulizia-database", status_code=302)
+
+
+@app.get("/elimina-generate-confirm", response_class=HTMLResponse)
+def delete_generated_confirm():
+    body = """
+<main class="container">
+    <div class="card">
+        <h1>Conferma eliminazione auto generate</h1>
+        <p>Questa azione elimina dal database tutte le auto con stato generated o legacy_generated.</p>
+        <p>Resteranno solo auto verified e premium_verified.</p>
+
+        <div class="warning">
+            Attenzione: azione forte. Fai backup prima.
+        </div>
+
+        <a class="button" href="/elimina-generate-esegui">Si, elimina generate</a>
+        <a class="button" href="/pulizia-database">Annulla</a>
+    </div>
+</main>
+"""
+    return page("Conferma eliminazione", body)
+
+
+@app.get("/elimina-generate-esegui")
+def delete_generated_execute():
+    connection = db()
+    connection.execute("""
+        DELETE FROM cars
+        WHERE data_quality IN ('generated', 'legacy_generated')
+    """)
+    connection.commit()
+    connection.close()
+
+    return RedirectResponse(url="/pulizia-database", status_code=302)
